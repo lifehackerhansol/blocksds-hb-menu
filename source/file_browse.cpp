@@ -27,6 +27,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <dirent.h>
+#include <sys/stat.h>
 
 #include <nds.h>
 
@@ -77,7 +78,7 @@ void getDirectoryContents (vector<DirEntry>& dirContents, const vector<string> e
 	DIR *pdir = opendir (".");
 
 	if (pdir == NULL) {
-		iprintf ("Unable to open the directory.\n");
+		printf ("Unable to open the directory.\n");
 	} else {
 
 		while(true) {
@@ -114,19 +115,19 @@ void showDirectoryContents (const vector<DirEntry>& dirContents, int startRow) {
 	getcwd(path, PATH_MAX);
 
 	// Clear the screen
-	iprintf ("\x1b[2J");
+	printf ("\x1b[2J");
 
 	// Print the path
 	if (strlen(path) < SCREEN_COLS) {
-		iprintf ("%s", path);
+		printf ("%s", path);
 	} else {
-		iprintf ("%s", path + strlen(path) - SCREEN_COLS);
+		printf ("%s", path + strlen(path) - SCREEN_COLS);
 	}
 
 	// Move to 2nd row
-	iprintf ("\x1b[1;0H");
+	printf ("\x1b[1;0H");
 	// Print line of dashes
-	iprintf ("--------------------------------");
+	printf ("--------------------------------");
 
 	// Print directory listing
 	for (int i = 0; i < ((int)dirContents.size() - startRow) && i < ENTRIES_PER_SCREEN; i++) {
@@ -134,16 +135,16 @@ void showDirectoryContents (const vector<DirEntry>& dirContents, int startRow) {
 		char entryName[SCREEN_COLS + 1];
 
 		// Set row
-		iprintf ("\x1b[%d;0H", i + ENTRIES_START_ROW);
+		printf ("\x1b[%d;0H", i + ENTRIES_START_ROW);
 
 		if (entry->isDirectory) {
 			strncpy (entryName, entry->name.c_str(), SCREEN_COLS);
 			entryName[SCREEN_COLS - 3] = '\0';
-			iprintf (" [%s]", entryName);
+			printf (" [%s]", entryName);
 		} else {
 			strncpy (entryName, entry->name.c_str(), SCREEN_COLS);
 			entryName[SCREEN_COLS - 1] = '\0';
-			iprintf (" %s", entryName);
+			printf (" %s", entryName);
 		}
 	}
 }
@@ -160,10 +161,10 @@ string browseForFile (const vector<string>& extensionList) {
 	while (true) {
 		// Clear old cursors
 		for (int i = ENTRIES_START_ROW; i < ENTRIES_PER_SCREEN + ENTRIES_START_ROW; i++) {
-			iprintf ("\x1b[%d;0H ", i);
+			printf ("\x1b[%d;0H ", i);
 		}
 		// Show cursor
-		iprintf ("\x1b[%d;0H*", fileOffset - screenOffset + ENTRIES_START_ROW);
+		printf ("\x1b[%d;0H*", fileOffset - screenOffset + ENTRIES_START_ROW);
 
 		iconTitleUpdate (dirContents.at(fileOffset).isDirectory, dirContents.at(fileOffset).name);
 
@@ -195,7 +196,7 @@ string browseForFile (const vector<string>& extensionList) {
 		if (pressed & KEY_A) {
 			DirEntry* entry = &dirContents.at(fileOffset);
 			if (entry->isDirectory) {
-				iprintf("Entering directory\n");
+				printf("Entering directory\n");
 				// Enter selected directory
 				chdir (entry->name.c_str());
 				getDirectoryContents (dirContents, extensionList);
@@ -204,7 +205,7 @@ string browseForFile (const vector<string>& extensionList) {
 				showDirectoryContents (dirContents, screenOffset);
 			} else {
 				// Clear the screen
-				iprintf ("\x1b[2J");
+				printf ("\x1b[2J");
 				// Return the chosen file
 				return entry->name;
 			}

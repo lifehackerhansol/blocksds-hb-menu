@@ -1,149 +1,228 @@
-#---------------------------------------------------------------------------------
-.SUFFIXES:
-#---------------------------------------------------------------------------------
-.SECONDARY:
+# SPDX-License-Identifier: CC0-1.0
+#
+# SPDX-FileContributor: Antonio Niño Díaz, 2023
 
-ifeq ($(strip $(DEVKITARM)),)
-$(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
-endif
+BLOCKSDS	?= /opt/blocksds/core
+BLOCKSDSEXT	?= /opt/blocksds/external
 
-include $(DEVKITARM)/ds_rules
+# User config
+# ===========
 
-export HBMENU_MAJOR	:= 0
-export HBMENU_MINOR	:= 8
-export HBMENU_PATCH	:= 0
+NAME		:= hbmenu
 
+GAME_TITLE	:= Homebrew Menu
+GAME_SUBTITLE	:= Built with BlocksDS
+GAME_AUTHOR	:= github.com/blocksds/sdk
+GAME_ICON	:= icon.bmp
 
-VERSION	:=	$(HBMENU_MAJOR).$(HBMENU_MINOR).$(HBMENU_PATCH)
-#---------------------------------------------------------------------------------
-# TARGET is the name of the output
-# BUILD is the directory where object files & intermediate files will be placed
-# SOURCES is a list of directories containing source code
-# INCLUDES is a list of directories containing extra header files
-# DATA is a list of directories containing binary files embedded using bin2o
-# GRAPHICS is a list of directories containing image files to be converted with grit
-#---------------------------------------------------------------------------------
-TARGET		:=	hbmenu
-BUILD		:=	build
-SOURCES		:=	source
-INCLUDES	:=	include
-DATA		:=	data
-GRAPHICS	:=  gfx
+# DLDI and internal SD slot of DSi
+# --------------------------------
 
-#---------------------------------------------------------------------------------
-# options for code generation
-#---------------------------------------------------------------------------------
-ARCH	:=	-mthumb -mthumb-interwork
+# Root folder of the SD image
+SDROOT		:= sdroot
+# Name of the generated image it "DSi-1.sd" for no$gba in DSi mode
+SDIMAGE		:= image.bin
 
-CFLAGS	:=	-g -Wall -O2 \
-		-ffunction-sections -fdata-sections \
- 		-march=armv5te -mtune=arm946e-s -fomit-frame-pointer\
-		-ffast-math \
-		$(ARCH)
+# Source code paths
+# -----------------
 
-CFLAGS	+=	$(INCLUDE) -DARM9
-CXXFLAGS	:= $(CFLAGS) -fno-rtti -fno-exceptions
+SOURCEDIRS	:= source
+INCLUDEDIRS	:=
+GFXDIRS		:= gfx
+BINDIRS		:= data
+AUDIODIRS	:=
+NITROFATDIR	:=
 
-ASFLAGS	:=	-g $(ARCH)
-LDFLAGS	=	-specs=ds_arm9.specs -g -Wl,--gc-sections $(ARCH) -Wl,-Map,$(notdir $*.map)
+# Defines passed to all files
+# ---------------------------
 
-#---------------------------------------------------------------------------------
-# any extra libraries we wish to link with the project (order is important)
-#---------------------------------------------------------------------------------
-LIBS	:= 	-lfat -lnds9
+DEFINES		:=
 
+# Libraries
+# ---------
 
-#---------------------------------------------------------------------------------
-# list of directories containing libraries, this must be the top level containing
-# include and lib
-#---------------------------------------------------------------------------------
-LIBDIRS	:=	$(LIBNDS)
+LIBS		:= -lnds9 -lc -lstdc++
+LIBDIRS		:= $(BLOCKSDS)/libs/maxmod \
+		   $(BLOCKSDS)/libs/libnds
 
-#---------------------------------------------------------------------------------
-# no real need to edit anything past this point unless you need to add additional
-# rules for different file extensions
-#---------------------------------------------------------------------------------
-ifneq ($(BUILD),$(notdir $(CURDIR)))
-#---------------------------------------------------------------------------------
+# Build artifacts
+# ---------------
 
-export OUTPUT	:=	$(CURDIR)/$(TARGET)
+BUILDDIR	:= build
+ELF		:= build/$(NAME).elf
+DUMP		:= build/$(NAME).dump
+NITROFAT_IMG	:= build/nitrofat.bin
+MAP		:= build/$(NAME).map
+SOUNDBANKDIR	:= $(BUILDDIR)/maxmod
+ROM		:= $(NAME).nds
 
-export VPATH	:=	$(foreach dir,$(SOURCES),$(CURDIR)/$(dir)) \
-					$(foreach dir,$(DATA),$(CURDIR)/$(dir)) \
-					$(foreach dir,$(GRAPHICS),$(CURDIR)/$(dir))
+# Tools
+# -----
 
-export DEPSDIR	:=	$(CURDIR)/$(BUILD)
+PREFIX		:= arm-none-eabi-
+CC		:= $(PREFIX)gcc
+CXX		:= $(PREFIX)g++
+OBJDUMP		:= $(PREFIX)objdump
+MKDIR		:= mkdir
+RM		:= rm -rf
 
-CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
-CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
-PNGFILES	:=	$(foreach dir,$(GRAPHICS),$(notdir $(wildcard $(dir)/*.png)))
-SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
-BINFILES	:=	load.bin bootstub.bin exceptionstub.bin
+# Verbose flag
+# ------------
 
-#---------------------------------------------------------------------------------
-# use CXX for linking C++ projects, CC for standard C
-#---------------------------------------------------------------------------------
-ifeq ($(strip $(CPPFILES)),)
-#---------------------------------------------------------------------------------
-	export LD	:=	$(CC)
-#---------------------------------------------------------------------------------
+ifeq ($(VERBOSE),1)
+V		:=
 else
-#---------------------------------------------------------------------------------
-	export LD	:=	$(CXX)
-#---------------------------------------------------------------------------------
+V		:= @
 endif
-#---------------------------------------------------------------------------------
 
-export OFILES	:=	$(addsuffix .o,$(BINFILES)) \
-					$(PNGFILES:.png=.o) \
-					$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
+# Source files
+# ------------
 
-export INCLUDE	:=	$(foreach dir,$(INCLUDES),-iquote $(CURDIR)/$(dir)) \
-					$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
-					-I$(CURDIR)/$(BUILD)
+ifneq ($(BINDIRS),)
+    SOURCES_BIN	:= $(shell find -L $(BINDIRS) -name "*.bin")
+    INCLUDEDIRS	+= $(addprefix $(BUILDDIR)/,$(BINDIRS))
+endif
+ifneq ($(GFXDIRS),)
+    SOURCES_PNG	:= $(shell find -L $(GFXDIRS) -name "*.png")
+    INCLUDEDIRS	+= $(addprefix $(BUILDDIR)/,$(GFXDIRS))
+endif
+ifneq ($(AUDIODIRS),)
+    SOURCES_AUDIO	:= $(shell find -L $(AUDIODIRS) -regex '.*\.\(it\|mod\|s3m\|wav\|xm\)')
+    ifneq ($(SOURCES_AUDIO),)
+        INCLUDEDIRS	+= $(SOUNDBANKDIR)
+    endif
+endif
 
-export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib)
+SOURCES_S	:= $(shell find -L $(SOURCEDIRS) -name "*.s")
+SOURCES_C	:= $(shell find -L $(SOURCEDIRS) -name "*.c")
+SOURCES_CPP	:= $(shell find -L $(SOURCEDIRS) -name "*.cpp")
 
-icons := $(wildcard *.bmp)
+# Compiler and linker flags
+# -------------------------
 
-ifneq (,$(findstring $(TARGET).bmp,$(icons)))
-	export GAME_ICON := $(CURDIR)/$(TARGET).bmp
+DEFINES		+= -D__NDS__ -DARM9
+
+ARCH		:= -march=armv5te -mtune=arm946e-s
+
+WARNFLAGS	:= -Wall
+
+ifeq ($(SOURCES_CPP),)
+    LD	:= $(CC)
 else
-	ifneq (,$(findstring icon.bmp,$(icons)))
-		export GAME_ICON := $(CURDIR)/icon.bmp
-	endif
+    LD	:= $(CXX)
 endif
 
-.PHONY: bootloader bootstub BootStrap exceptionstub $(BUILD) clean
+INCLUDEFLAGS	:= $(foreach path,$(INCLUDEDIRS),-I$(path)) \
+		   $(foreach path,$(LIBDIRS),-I$(path)/include)
 
-all:	bootloader bootstub exceptionstub $(BUILD) BootStrap
+LIBDIRSFLAGS	:= $(foreach path,$(LIBDIRS),-L$(path)/lib)
 
-dist:	all
-	@rm	-fr	hbmenu
-	@mkdir -p hbmenu/nds
-	@cp hbmenu.nds hbmenu/BOOT.NDS
-	@cp BootStrap/_BOOT_MP.NDS BootStrap/TTMENU.DAT BootStrap/_DS_MENU.DAT BootStrap/ez5sys.bin BootStrap/akmenu4.nds BootStrap/ismat.dat hbmenu
-	@cp -r BootStrap/ACE3DS hbmenu
-	@cp BootStrap/bootstrap.cia hbmenu
-	@cp testfiles/* hbmenu/nds
-	@zip -9r hbmenu-$(VERSION).zip hbmenu README.md COPYING
+ASFLAGS		+= -x assembler-with-cpp $(DEFINES) $(ARCH) \
+		   -mthumb -mthumb-interwork $(INCLUDEFLAGS) \
+		   -ffunction-sections -fdata-sections
 
-#---------------------------------------------------------------------------------
-$(BUILD):
-	@[ -d $@ ] || mkdir -p $@
-	@make --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
+CFLAGS		+= -std=gnu11 $(WARNFLAGS) $(DEFINES) $(ARCH) \
+		   -mthumb -mthumb-interwork $(INCLUDEFLAGS) -O2 \
+		   -ffunction-sections -fdata-sections \
+		   -fomit-frame-pointer
 
-#---------------------------------------------------------------------------------
+CXXFLAGS	+= -std=gnu++14 $(WARNFLAGS) $(DEFINES) $(ARCH) \
+		   -mthumb -mthumb-interwork $(INCLUDEFLAGS) -O2 \
+		   -ffunction-sections -fdata-sections \
+		   -fno-exceptions -fno-rtti \
+		   -fomit-frame-pointer
+
+LDFLAGS		:= -mthumb -mthumb-interwork $(LIBDIRSFLAGS) \
+		   -Wl,-Map,$(MAP) -Wl,--gc-sections -nostdlib \
+		   -T$(BLOCKSDS)/sys/crts/ds_arm9.mem \
+		   -T$(BLOCKSDS)/sys/crts/ds_arm9.ld \
+		   -Wl,--no-warn-rwx-segments \
+		   -Wl,--start-group $(LIBS) -lgcc -Wl,--end-group
+
+# Intermediate build files
+# ------------------------
+
+OBJS_ASSETS	:= $(addsuffix .o,$(addprefix $(BUILDDIR)/,$(SOURCES_BIN))) \
+		   $(addsuffix .o,$(addprefix $(BUILDDIR)/,$(SOURCES_PNG)))
+
+HEADERS_ASSETS	:= $(patsubst %.bin,%_bin.h,$(addprefix $(BUILDDIR)/,$(SOURCES_BIN))) \
+		   $(patsubst %.png,%.h,$(addprefix $(BUILDDIR)/,$(SOURCES_PNG)))
+
+ifneq ($(SOURCES_AUDIO),)
+    OBJS_ASSETS		+= $(SOUNDBANKDIR)/soundbank.c.o
+    HEADERS_ASSETS	+= $(SOUNDBANKDIR)/soundbank.h
+endif
+
+OBJS_SOURCES	:= $(addsuffix .o,$(addprefix $(BUILDDIR)/,$(SOURCES_S))) \
+		   $(addsuffix .o,$(addprefix $(BUILDDIR)/,$(SOURCES_C))) \
+		   $(addsuffix .o,$(addprefix $(BUILDDIR)/,$(SOURCES_CPP)))
+
+OBJS		:= $(OBJS_ASSETS) $(OBJS_SOURCES)
+
+DEPS		:= $(OBJS:.o=.d)
+
+# Targets
+# -------
+
+.PHONY: bootloader bootstub exceptionstub all clean dump dldipatch sdimage
+
+all: bootloader bootstub exceptionstub $(ROM)
+
+ifneq ($(strip $(NITROFATDIR)),)
+# Additional arguments for ndstool
+NDSTOOL_FAT	:= -F $(NITROFAT_IMG)
+
+$(NITROFAT_IMG): $(NITROFATDIR)
+	@echo "  MKFATIMG $@ $(NITROFATDIR)"
+	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(NITROFATDIR) $@ 0
+
+# Make the NDS ROM depend on the filesystem image only if it is needed
+$(ROM): $(NITROFAT_IMG)
+endif
+
+# Combine the title strings
+ifeq ($(strip $(GAME_SUBTITLE)),)
+    GAME_FULL_TITLE := $(GAME_TITLE);$(GAME_AUTHOR)
+else
+    GAME_FULL_TITLE := $(GAME_TITLE);$(GAME_SUBTITLE);$(GAME_AUTHOR)
+endif
+
+$(ROM): $(ELF)
+	@echo "  NDSTOOL $@"
+	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
+		-7 $(BLOCKSDS)/sys/default_arm7/arm7.elf -9 $(ELF) \
+		-b $(GAME_ICON) "$(GAME_FULL_TITLE)" \
+		$(NDSTOOL_FAT)
+
+$(ELF): $(OBJS)
+	@echo "  LD      $@"
+	$(V)$(LD) -o $@ $(OBJS) $(BLOCKSDS)/sys/crts/ds_arm9_crt0.o $(LDFLAGS)
+
+$(DUMP): $(ELF)
+	@echo "  OBJDUMP   $@"
+	$(V)$(OBJDUMP) -h -C -S $< > $@
+
+dump: $(DUMP)
+
 clean:
-	@echo clean ...
-	@rm -fr $(BUILD) $(TARGET).elf $(TARGET).nds $(TARGET).arm9 data
+	@echo "  CLEAN"
+	$(V)$(RM) $(ROM) $(DUMP) $(BUILDDIR) $(SDIMAGE)
 	@$(MAKE) -C bootloader clean
 	@$(MAKE) -C bootstub clean
 	@$(MAKE) -C BootStrap clean
 	@$(MAKE) -C nds-exception-stub clean
 
+sdimage:
+	@echo "  MKFATIMG $(SDIMAGE) $(SDROOT)"
+	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(SDROOT) $(SDIMAGE) 0
+
+dldipatch: $(ROM)
+	@echo "  DLDITOOL $(ROM)"
+	$(V)$(BLOCKSDS)/tools/dlditool/dlditool \
+		$(BLOCKSDS)/tools/dldi/r4tfv2.dldi $(ROM)
+
 data:
-	@mkdir -p data
+	@$(MKDIR) -p data
 
 bootloader: data
 	@$(MAKE) -C bootloader LOADBIN=$(CURDIR)/data/load.bin
@@ -154,36 +233,57 @@ exceptionstub: data
 bootstub: data
 	@$(MAKE) -C bootstub
 
-BootStrap:
-	@$(MAKE) -C BootStrap
+# Rules
+# -----
 
-#---------------------------------------------------------------------------------
-else
+$(BUILDDIR)/%.s.o : %.s
+	@echo "  AS      $<"
+	@$(MKDIR) -p $(@D)
+	$(V)$(CC) $(ASFLAGS) -MMD -MP -c -o $@ $<
 
-#---------------------------------------------------------------------------------
-# main targets
-#---------------------------------------------------------------------------------
-$(OUTPUT).nds	: 	$(OUTPUT).elf
-$(OUTPUT).elf	:	$(OFILES)
+$(BUILDDIR)/%.c.o : %.c
+	@echo "  CC      $<"
+	@$(MKDIR) -p $(@D)
+	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
 
-#---------------------------------------------------------------------------------
-%.bin.o	:	%.bin
-#---------------------------------------------------------------------------------
-	@echo $(notdir $<)
-	$(bin2o)
+$(BUILDDIR)/%.cpp.o : %.cpp
+	@echo "  CXX     $<"
+	@$(MKDIR) -p $(@D)
+	$(V)$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
 
-#---------------------------------------------------------------------------------
-# This rule creates assembly source files using grit
-# grit takes an image file and a .grit describing how the file is to be processed
-# add additional rules like this for each image extension
-# you use in the graphics folders
-#---------------------------------------------------------------------------------
-%.s %.h   : %.png %.grit
-#---------------------------------------------------------------------------------
-	grit $< -fts -o$*
+$(BUILDDIR)/%.bin.o $(BUILDDIR)/%_bin.h : %.bin
+	@echo "  BIN2C   $<"
+	@$(MKDIR) -p $(@D)
+	$(V)$(BLOCKSDS)/tools/bin2c/bin2c $< $(@D)
+	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $(BUILDDIR)/$*.bin.o $(BUILDDIR)/$*_bin.c
 
--include $(DEPSDIR)/*.d
+$(BUILDDIR)/%.png.o $(BUILDDIR)/%.h : %.png %.grit
+	@echo "  GRIT    $<"
+	@$(MKDIR) -p $(@D)
+	$(V)$(BLOCKSDS)/tools/grit/grit $< -ftc -W1 -o$(BUILDDIR)/$*
+	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $(BUILDDIR)/$*.png.o $(BUILDDIR)/$*.c
+	$(V)touch $(BUILDDIR)/$*.png.o $(BUILDDIR)/$*.h
 
-#---------------------------------------------------------------------------------------
-endif
-#---------------------------------------------------------------------------------------
+$(SOUNDBANKDIR)/soundbank.h: $(SOURCES_AUDIO)
+	@echo "  MMUTIL  $^"
+	@$(MKDIR) -p $(@D)
+	@$(BLOCKSDS)/tools/mmutil/mmutil $^ -d \
+		-o$(SOUNDBANKDIR)/soundbank.bin -h$(SOUNDBANKDIR)/soundbank.h
+
+$(SOUNDBANKDIR)/soundbank.c.o: $(SOUNDBANKDIR)/soundbank.h
+	@echo "  BIN2C   soundbank.bin"
+	$(V)$(BLOCKSDS)/tools/bin2c/bin2c $(SOUNDBANKDIR)/soundbank.bin \
+		$(SOUNDBANKDIR)
+	@echo "  CC.9    soundbank_bin.c"
+	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $(SOUNDBANKDIR)/soundbank.c.o \
+		$(SOUNDBANKDIR)/soundbank_bin.c
+
+# All assets must be built before the source code
+# -----------------------------------------------
+
+$(SOURCES_S) $(SOURCES_C) $(SOURCES_CPP): $(HEADERS_ASSETS)
+
+# Include dependency files if they exist
+# --------------------------------------
+
+-include $(DEPS)

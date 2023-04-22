@@ -59,7 +59,7 @@ static bool parseArgFileAll(const string& filename, vector<string>& argarray) {
 
 	char *line = NULL;
 	size_t lineSize = 0;
-	while (__getline(&line, &lineSize, argfile) >= 0) {
+	while (getline(&line, &lineSize, argfile) >= 0) {
 		// Find comment and end string there
 		char *pstr = strchr(line, '#');
 		if (pstr) {
@@ -97,7 +97,7 @@ static bool parseArgFileNds(const std::string& filename, std::string& ndsPath) {
 
 	char *line = NULL;
 	size_t lineSize = 0;
-	while (__getline(&line, &lineSize, argfile) >= 0) {
+	while (getline(&line, &lineSize, argfile) >= 0) {
 		char *pstr = NULL;
 
 		// Find comment and end string there

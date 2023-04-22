@@ -62,7 +62,7 @@ int main(int argc, char **argv) {
 	consoleInit(NULL, 0, BgType_Text4bpp, BgSize_T_256x256, 15, 0, false, true);
 
 	if (!fatInitDefault()) {
-		iprintf ("fatinitDefault failed!\n");
+		printf ("fatinitDefault failed!\n");
 		stop();
 	}
 
@@ -79,9 +79,9 @@ int main(int argc, char **argv) {
 		// Construct a command line
 		vector<string> argarray;
 		if (!argsFillArray(filename, argarray)) {
-			iprintf("Invalid NDS or arg file selected\n");
+			printf("Invalid NDS or arg file selected\n");
 		} else {
-			iprintf("Running %s with %d parameters\n", argarray[0].c_str(), argarray.size());
+			printf("Running %s with %d parameters\n", argarray[0].c_str(), argarray.size());
 
 			// Make a copy of argarray using C strings, for the sake of runNdsFile
 			vector<const char*> c_args;
@@ -91,7 +91,7 @@ int main(int argc, char **argv) {
 
 			// Try to run the NDS file with the given arguments
 			int err = runNdsFile(c_args[0], c_args.size(), &c_args[0]);
-			iprintf("Start failed. Error %i\n", err);
+			printf("Start failed. Error %i\n", err);
 		}
 
 		argarray.clear();

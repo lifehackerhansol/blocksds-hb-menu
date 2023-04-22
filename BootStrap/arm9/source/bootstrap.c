@@ -19,7 +19,7 @@
 ------------------------------------------------------------------*/
 
 #include <nds.h>
-#include <fat.h>
+#include <fatfs.h>
 
 #include <stdio.h>
 
@@ -27,11 +27,11 @@
 
 int main( int argc, char **argv) {
 	consoleDemoInit();
-	iprintf("hbmenu bootstrap ...\n");
+	printf("hbmenu bootstrap ...\n");
 	if (fatInitDefault()) {
 		runNdsFile("/BOOT.NDS", 0, NULL);
 	} else {
-		iprintf("FAT init failed!\n");
+		printf("FAT init failed!\n");
 	}
 	while(1) swiWaitForVBlank();
 }

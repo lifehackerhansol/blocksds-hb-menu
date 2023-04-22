@@ -1,61 +1,154 @@
-#---------------------------------------------------------------------------------
-.SUFFIXES:
-#---------------------------------------------------------------------------------
-ifeq ($(strip $(DEVKITARM)),)
-$(error "Please set DEVKITARM in your environment. export DEVKITARM=<path to>devkitARM")
+# SPDX-License-Identifier: CC0-1.0
+#
+# SPDX-FileContributor: Antonio Niño Díaz, 2023
+
+BLOCKSDS	?= /opt/blocksds/core
+BLOCKSDSEXT	?= /opt/blocksds/external
+
+# User config
+# ===========
+
+NAME		:= bootstrap
+
+GAME_TITLE	:= blocksds-hb-menu bootstrap
+GAME_SUBTITLE	:= Built with BlocksDS
+GAME_AUTHOR	:= github.com/blocksds/sdk
+GAME_ICON	:= bootstrap.bmp
+
+# DLDI and internal SD slot of DSi
+# --------------------------------
+
+# Root folder of the SD image
+SDROOT		:= sdroot
+# Name of the generated image it "DSi-1.sd" for no$gba in DSi mode
+SDIMAGE		:= image.bin
+
+# Source code paths
+# -----------------
+
+NITROFATDIR	:= # A single directory that is the root of NitroFAT
+
+# Tools
+# -----
+
+MAKE		:= make
+RM		:= rm -rf
+
+# Verbose flag
+# ------------
+
+ifeq ($(VERBOSE),1)
+V		:=
+else
+V		:= @
 endif
 
-include $(DEVKITARM)/ds_rules
+# Directories
+# -----------
 
-export TARGET		:=	bootstrap
-export TOPDIR		:=	$(CURDIR)
+ARM9DIR		:= arm9
+ARM7DIR		:= arm7
 
+# Build artfacts
+# --------------
 
-.PHONY: checkarm7 checkarm9
+NITROFAT_IMG	:= build/nitrofat.bin
+ROM		:= $(NAME).nds
+ROM		:= $(NAME).nds
 
-#---------------------------------------------------------------------------------
-# main targets
-#---------------------------------------------------------------------------------
-all: checkarm7 checkarm9 \
+# Targets
+# -------
+
+.PHONY: all clean arm9 arm7 dldipatch sdimage
+
+all: $(ROM) $(ROMDSI) \
 	_ds_menu.dat ismat.dat ez5sys.bin \
 	akmenu4.nds TTMENU.DAT _BOOT_MP.NDS \
 	ACE3DS/_ds_menu.dat ACE3DS/_dsmenu.dat
 
-_ds_menu.dat	:	$(TARGET).nds r4tfv2.dldi
-	@cp $(TARGET).nds _ds_menu.nds
+clean:
+	@echo "  CLEAN"
+	$(V)$(MAKE) -f Makefile.arm9 clean --no-print-directory
+	$(V)$(MAKE) -f Makefile.arm7 clean --no-print-directory
+	$(V)$(RM) $(ROM) build $(SDIMAGE) \
+	_ds_menu.dat ismat.dat ez5sys.bin \
+	akmenu4.nds TTMENU.DAT _BOOT_MP.NDS \
+	ACE3DS/_ds_menu.dat ACE3DS/_dsmenu.dat
+
+arm9:
+	$(V)+$(MAKE) -f Makefile.arm9 --no-print-directory
+
+arm7:
+	$(V)+$(MAKE) -f Makefile.arm7 --no-print-directory
+
+ifneq ($(strip $(NITROFATDIR)),)
+# Additional arguments for ndstool
+NDSTOOL_FAT	:= -F $(NITROFAT_IMG)
+
+$(NITROFAT_IMG): $(NITROFATDIR)
+	@echo "  MKFATIMG $@ $(NITROFATDIR)"
+	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(NITROFATDIR) $@
+
+# Make the NDS ROM depend on the filesystem image only if it is needed
+$(ROM): $(NITROFAT_IMG)
+endif
+
+# Combine the title strings
+ifeq ($(strip $(GAME_SUBTITLE)),)
+    GAME_FULL_TITLE := $(GAME_TITLE);$(GAME_AUTHOR)
+else
+    GAME_FULL_TITLE := $(GAME_TITLE);$(GAME_SUBTITLE);$(GAME_AUTHOR)
+endif
+
+$(ROM): arm9 arm7
+	@echo "  NDSTOOL $@"
+	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
+		-7 build/arm7.elf -9 build/arm9.elf \
+		-b $(GAME_ICON) "$(GAME_FULL_TITLE)" \
+		$(NDSTOOL_FAT)
+
+$(ROMDSI): arm9 arm7
+	@echo "  NDSTOOL $@"
+	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
+		-7 build/arm7.elf -9 build/arm9i.elf \
+		-b $(GAME_ICON) "$(GAME_FULL_TITLE)" \
+		$(NDSTOOL_FAT)
+
+_ds_menu.dat	:	$(ROM) r4tfv2.dldi
+	@cp $(ROM) _ds_menu.nds
 	@dlditool r4tfv2.dldi _ds_menu.nds
 	@r4denc $< _ds_menu.nds $@
 
-ACE3DS/_ds_menu.dat	:	$(TARGET).nds ace3ds_sd.dldi
+ACE3DS/_ds_menu.dat	:	$(ROM) ace3ds_sd.dldi
 	@[ -d ACE3DS ] || mkdir -p ACE3DS
-	@cp $(TARGET).nds ACE3DS/_ds_menu.nds
+	@cp $(ROM) ACE3DS/_ds_menu.nds
 	@dlditool ace3ds_sd.dldi ACE3DS/_ds_menu.nds
 	@r4denc --key 0x4002 ACE3DS/_ds_menu.nds $@
 
 # Alternative name for some ACE3DS clones.
-ACE3DS/_dsmenu.dat	:	$(TARGET).nds ace3ds_sd.dldi
+ACE3DS/_dsmenu.dat	:	$(ROM) ace3ds_sd.dldi
 	@[ -d ACE3DS ] || mkdir -p ACE3DS
-	@cp $(TARGET).nds ACE3DS/_dsmenu.nds
+	@cp $(ROM) ACE3DS/_dsmenu.nds
 	@dlditool ace3ds_sd.dldi ACE3DS/_dsmenu.nds
 	@r4denc --key 0x4002 ACE3DS/_dsmenu.nds $@
 
-ez5sys.bin	:	$(TARGET).nds EZ5V2.dldi
+ez5sys.bin	:	$(ROM) EZ5V2.dldi
 	@cp $< $@
 	@dlditool EZ5V2.dldi $@
 
-akmenu4.nds	:	$(TARGET).nds  ak2_sd.dldi
+akmenu4.nds	:	$(ROM)  ak2_sd.dldi
 	@cp $< $@
 	@dlditool ak2_sd.dldi $@
 
-TTMENU.DAT	:	$(TARGET).nds  TTCARDIOLibrary.dldi
+TTMENU.DAT	:	$(ROM)  TTCARDIOLibrary.dldi
 	@cp $< $@
 	@dlditool TTCARDIOLibrary.dldi $@
 
-_BOOT_MP.NDS	:	$(TARGET).nds mpcf.dldi
+_BOOT_MP.NDS	:	$(ROM) mpcf.dldi
 	@cp $< $@
 	@dlditool mpcf.dldi $@
 
-ismat.dat	:	$(TARGET).nds mati.dldi
+ismat.dat	:	$(ROM) mati.dldi
 	@cp $< $@
 	@dlditool mati.dldi $@
 
@@ -74,33 +167,11 @@ bootstrap.cia: bootstrap.dsi
 bootstrap.dsi : $(TARGET).arm7.elf $(TARGET).arm9i.elf
 	ndstool -u 00030004 -g HBLA -b bootstrap.bmp "nds-hb-menu bootstrap;built with devkitARM;http://devkitpro.org" -c $@ -7 $(TARGET).arm7.elf -9 $(TARGET).arm9i.elf
 
-#---------------------------------------------------------------------------------
-$(TARGET).nds	:	$(TARGET).arm7.elf $(TARGET).arm9.elf
-	ndstool	-g "####" "##" "R4XX" -h 0x200 -c $(TARGET).nds -7 $(TARGET).arm7.elf -9 $(TARGET).arm9.elf
+sdimage:
+	@echo "  MKFATIMG $(SDIMAGE) $(SDROOT)"
+	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(SDROOT) $(SDIMAGE)
 
-checkarm7:
-	$(MAKE) -C arm7
-
-checkarm9:
-	$(MAKE) -C arm9
-
-#---------------------------------------------------------------------------------
-$(TARGET).arm7.elf:
-	$(MAKE) -C arm7
-	
-#---------------------------------------------------------------------------------
-$(TARGET).arm9.elf:
-	$(MAKE) -C arm9
-
-#---------------------------------------------------------------------------------
-$(TARGET).arm9i.elf:
-	$(MAKE) -C arm9
-
-#---------------------------------------------------------------------------------
-clean:
-	$(MAKE) -C arm9 clean
-	$(MAKE) -C arm7 clean
-	rm -f $(TARGET).nds $(TARGET).arm7.elf $(TARGET).arm9.elf _ds_menu.dat ez5sys.bin akmenu4.nds TTMENU.DAT _BOOT_MP.NDS ismat.dat
-	rm -fr ACE3DS
-	rm -f bootstrap.dsi $(TARGET).arm9i.elf bootstrap.cia
-
+dldipatch: $(ROM)
+	@echo "  DLDITOOL $(ROM)"
+	$(V)$(BLOCKSDS)/tools/dlditool/dlditool \
+		$(BLOCKSDS)/tools/dldi/r4tfv2.dldi $(ROM)

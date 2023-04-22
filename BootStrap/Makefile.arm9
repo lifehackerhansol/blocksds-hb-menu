@@ -5,39 +5,14 @@
 BLOCKSDS	?= /opt/blocksds/core
 BLOCKSDSEXT	?= /opt/blocksds/external
 
-# User config
-# ===========
-
-NAME		:= hbmenu
-
-GAME_TITLE	:= Homebrew Menu
-GAME_SUBTITLE	:= Built with BlocksDS
-GAME_AUTHOR	:= github.com/blocksds/sdk
-GAME_ICON	:= icon.bmp
-
-export HBMENU_MAJOR	:= 0
-export HBMENU_MINOR	:= 9
-export HBMENU_PATCH	:= 0-blocks
-
-VERSION	:=	$(HBMENU_MAJOR).$(HBMENU_MINOR).$(HBMENU_PATCH)
-
-# DLDI and internal SD slot of DSi
-# --------------------------------
-
-# Root folder of the SD image
-SDROOT		:= sdroot
-# Name of the generated image it "DSi-1.sd" for no$gba in DSi mode
-SDIMAGE		:= image.bin
-
 # Source code paths
 # -----------------
 
-SOURCEDIRS	:= source
-INCLUDEDIRS	:=
-GFXDIRS		:= gfx
-BINDIRS		:= data
+SOURCEDIRS	:= arm9/source ../source
+INCLUDEDIRS	:= ../source
+GFXDIRS		:=
+BINDIRS		:= ../data
 AUDIODIRS	:=
-NITROFATDIR	:=
 
 # Defines passed to all files
 # ---------------------------
@@ -47,20 +22,19 @@ DEFINES		:=
 # Libraries
 # ---------
 
-LIBS		:= -lnds9 -lc -lstdc++
-LIBDIRS		:= $(BLOCKSDS)/libs/maxmod \
-		   $(BLOCKSDS)/libs/libnds
+LIBS		:= -lnds9
+LIBDIRS		:= $(BLOCKSDS)/libs/libnds
 
 # Build artifacts
 # ---------------
 
-BUILDDIR	:= build
+BUILDDIR	:= build/arm9
+NAME		:= arm9
 ELF		:= build/$(NAME).elf
+ARM9iELF		:= build/$(NAME)i.elf
 DUMP		:= build/$(NAME).dump
-NITROFAT_IMG	:= build/nitrofat.bin
 MAP		:= build/$(NAME).map
 SOUNDBANKDIR	:= $(BUILDDIR)/maxmod
-ROM		:= $(NAME).nds
 
 # Tools
 # -----
@@ -99,23 +73,25 @@ ifneq ($(AUDIODIRS),)
     endif
 endif
 
-SOURCES_S	:= $(shell find -L $(SOURCEDIRS) -name "*.s")
-SOURCES_C	:= $(shell find -L $(SOURCEDIRS) -name "*.c")
-SOURCES_CPP	:= $(shell find -L $(SOURCEDIRS) -name "*.cpp")
+SOURCES_S	:=
+SOURCES_C	:= $(shell find -L $(SOURCEDIRS) -name "bootstrap.c") $(shell find -L $(SOURCEDIRS) -name "nds_loader_arm9.c")
+SOURCES_CPP	:=
 
 # Compiler and linker flags
 # -------------------------
 
-DEFINES		+= -D__NDS__ -DARM9
+DEFINES		+= -D__NDS__ -DARM9 -D_NO_BOOTSTUB_
 
 ARCH		:= -march=armv5te -mtune=arm946e-s
 
 WARNFLAGS	:= -Wall
 
 ifeq ($(SOURCES_CPP),)
-    LD	:= $(CC)
+    LD		:= $(CC)
+    LIBS	+= -lc
 else
-    LD	:= $(CXX)
+    LD		:= $(CXX)
+    LIBS	+= -lstdc++ -lc
 endif
 
 INCLUDEFLAGS	:= $(foreach path,$(INCLUDEDIRS),-I$(path)) \
@@ -170,119 +146,64 @@ DEPS		:= $(OBJS:.o=.d)
 # Targets
 # -------
 
-.PHONY: bootloader bootstub BootStrap exceptionstub all clean dump dldipatch sdimage cia
+.PHONY: all clean dump
 
-all: bootloader bootstub exceptionstub $(ROM) BootStrap
-
-cia:
-	$(MAKE) -C BootStrap bootstrap.cia
-
-dist:	all
-	rm	-fr	hbmenu
-	mkdir -p hbmenu/nds
-	cp hbmenu.nds hbmenu/BOOT.NDS
-	cp BootStrap/_BOOT_MP.NDS BootStrap/TTMENU.DAT BootStrap/_ds_menu.dat BootStrap/ez5sys.bin BootStrap/akmenu4.nds BootStrap/ismat.dat hbmenu
-	cp -r BootStrap/ACE3DS hbmenu
-ifneq (,$(wildcard BootStrap/bootstrap.cia))
-	cp "BootStrap/bootstrap.cia" hbmenu
-endif
-	cp testfiles/* hbmenu/nds
-	zip -9r hbmenu-$(VERSION).zip hbmenu README.md COPYING
-
-ifneq ($(strip $(NITROFATDIR)),)
-# Additional arguments for ndstool
-NDSTOOL_FAT	:= -F $(NITROFAT_IMG)
-
-$(NITROFAT_IMG): $(NITROFATDIR)
-	@echo "  MKFATIMG $@ $(NITROFATDIR)"
-	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(NITROFATDIR) $@ 0
-
-# Make the NDS ROM depend on the filesystem image only if it is needed
-$(ROM): $(NITROFAT_IMG)
-endif
-
-# Combine the title strings
-ifeq ($(strip $(GAME_SUBTITLE)),)
-    GAME_FULL_TITLE := $(GAME_TITLE);$(GAME_AUTHOR)
-else
-    GAME_FULL_TITLE := $(GAME_TITLE);$(GAME_SUBTITLE);$(GAME_AUTHOR)
-endif
-
-$(ROM): $(ELF)
-	@echo "  NDSTOOL $@"
-	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
-		-7 $(BLOCKSDS)/sys/default_arm7/arm7.elf -9 $(ELF) \
-		-b $(GAME_ICON) "$(GAME_FULL_TITLE)" \
-		$(NDSTOOL_FAT)
+all: $(ELF) $(ARM9iELF)
 
 $(ELF): $(OBJS)
-	@echo "  LD      $@"
-	$(V)$(LD) -o $@ $(OBJS) $(BLOCKSDS)/sys/crts/ds_arm9_crt0.o $(LDFLAGS)
+	@echo "  LD.9    $@"
+	$(V)$(LD) -o $@ $(OBJS) $(BLOCKSDS)/sys/crts/ds_arm9_crt0.o -Wl,--defsym,__secure_area__=0 -Wl,--section-start,.crt0=0x02000450,--nmagic $(LDFLAGS)
+
+$(ARM9iELF): $(OBJS)
+	@echo "  LD.9i   $@"
+	$(V)$(LD) -o $@ $(OBJS) $(BLOCKSDS)/sys/crts/ds_arm9_crt0.o -Wl,--defsym,__secure_area__=0 -Wl,--section-start,.crt0=0x02000450,--nmagic $(LDFLAGS)
 
 $(DUMP): $(ELF)
-	@echo "  OBJDUMP   $@"
+	@echo "  OBJDUMP.9 $@"
 	$(V)$(OBJDUMP) -h -C -S $< > $@
 
 dump: $(DUMP)
 
 clean:
-	@echo "  CLEAN"
-	$(V)$(RM) $(ROM) $(DUMP) $(BUILDDIR) $(SDIMAGE) $(BINDIRS)
-	$(V)+$(MAKE) -C bootloader clean
-	$(V)+$(MAKE) -C bootstub clean
-	$(V)+$(MAKE) -C BootStrap clean
-	$(V)+$(MAKE) -C nds-exception-stub clean
-
-sdimage:
-	@echo "  MKFATIMG $(SDIMAGE) $(SDROOT)"
-	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(SDROOT) $(SDIMAGE) 0
-
-dldipatch: $(ROM)
-	@echo "  DLDITOOL $(ROM)"
-	$(V)$(BLOCKSDS)/tools/dlditool/dlditool \
-		$(BLOCKSDS)/tools/dldi/r4tfv2.dldi $(ROM)
-
-data:
-	$(V)$(MKDIR) -p data
-
-bootloader: data
-	$(V)+$(MAKE) -C bootloader LOADBIN=$(CURDIR)/data/load.bin
-
-exceptionstub: data
-	$(V)+$(MAKE) -C nds-exception-stub STUBBIN=$(CURDIR)/data/exceptionstub.bin
-
-bootstub: data
-	$(V)+$(MAKE) -C bootstub
-
-BootStrap:
-	$(V)+$(MAKE) -C BootStrap
+	@echo "  CLEAN.9"
+	$(V)$(RM) $(ELF) $(DUMP) $(MAP) $(BUILDDIR)
 
 # Rules
 # -----
 
 $(BUILDDIR)/%.s.o : %.s
-	@echo "  AS      $<"
+	@echo "  AS.9    $<"
 	@$(MKDIR) -p $(@D)
 	$(V)$(CC) $(ASFLAGS) -MMD -MP -c -o $@ $<
 
 $(BUILDDIR)/%.c.o : %.c
-	@echo "  CC      $<"
+	@echo "  CC.9    $<"
 	@$(MKDIR) -p $(@D)
 	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
 
+$(BUILDDIR)/%.arm.c.o : %.arm.c
+	@echo "  CC.9    $<"
+	@$(MKDIR) -p $(@D)
+	$(V)$(CC) $(CFLAGS) -MMD -MP -marm -mlong-calls -c -o $@ $<
+
 $(BUILDDIR)/%.cpp.o : %.cpp
-	@echo "  CXX     $<"
+	@echo "  CXX.9   $<"
 	@$(MKDIR) -p $(@D)
 	$(V)$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
 
+$(BUILDDIR)/%.arm.cpp.o : %.arm.cpp
+	@echo "  CXX.9   $<"
+	@$(MKDIR) -p $(@D)
+	$(V)$(CXX) $(CXXFLAGS) -MMD -MP -marm -mlong-calls -c -o $@ $<
+
 $(BUILDDIR)/%.bin.o $(BUILDDIR)/%_bin.h : %.bin
-	@echo "  BIN2C   $<"
+	@echo "  BIN2C.9 $<"
 	@$(MKDIR) -p $(@D)
 	$(V)$(BLOCKSDS)/tools/bin2c/bin2c $< $(@D)
 	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $(BUILDDIR)/$*.bin.o $(BUILDDIR)/$*_bin.c
 
 $(BUILDDIR)/%.png.o $(BUILDDIR)/%.h : %.png %.grit
-	@echo "  GRIT    $<"
+	@echo "  GRIT.9  $<"
 	@$(MKDIR) -p $(@D)
 	$(V)$(BLOCKSDS)/tools/grit/grit $< -ftc -W1 -o$(BUILDDIR)/$*
 	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $(BUILDDIR)/$*.png.o $(BUILDDIR)/$*.c

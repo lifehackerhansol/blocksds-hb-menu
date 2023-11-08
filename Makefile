@@ -18,12 +18,6 @@ GAME_SUBTITLE	:= Built with BlocksDS
 GAME_AUTHOR	:= github.com/blocksds/sdk
 GAME_ICON	:= icon.bmp
 
-export HBMENU_MAJOR	:= 0
-export HBMENU_MINOR	:= 9
-export HBMENU_PATCH	:= 0-blocks
-
-VERSION	:=	$(HBMENU_MAJOR).$(HBMENU_MINOR).$(HBMENU_PATCH)
-
 # DLDI and internal SD slot of DSi
 # --------------------------------
 
@@ -50,9 +44,8 @@ DEFINES		:=
 # Libraries
 # ---------
 
-LIBS		:= -lmm9 -lnds9
-LIBDIRS		:= $(BLOCKSDS)/libs/maxmod \
-		   $(BLOCKSDS)/libs/libnds
+LIBS		:= -lnds9
+LIBDIRS		:= $(BLOCKSDS)/libs/libnds
 
 # Build artifacts
 # ---------------
@@ -183,24 +176,9 @@ DEPS		:= $(OBJS:.o=.d)
 # Targets
 # -------
 
-.PHONY: bootloader bootstub BootStrap exceptionstub all clean dump dldipatch sdimage cia
+.PHONY: all clean dump dldipatch sdimage
 
-all: bootloader bootstub exceptionstub $(ROM) BootStrap
-
-cia:
-	$(MAKE) -C BootStrap bootstrap.cia
-
-dist:	all
-	rm	-fr	hbmenu
-	mkdir -p hbmenu/nds
-	cp hbmenu.nds hbmenu/BOOT.NDS
-	cp BootStrap/_BOOT_MP.NDS BootStrap/TTMENU.DAT BootStrap/_ds_menu.dat BootStrap/ez5sys.bin BootStrap/akmenu4.nds BootStrap/ismat.dat hbmenu
-	cp -r BootStrap/ACE3DS hbmenu
-ifneq (,$(wildcard BootStrap/bootstrap.cia))
-	cp "BootStrap/bootstrap.cia" hbmenu
-endif
-	cp testfiles/* hbmenu/nds
-	zip -9r hbmenu-$(VERSION).zip hbmenu README.md COPYING
+all: $(ROM)
 
 ifneq ($(strip $(NITROFSDIR)),)
 # Additional arguments for ndstool
@@ -236,11 +214,8 @@ dump: $(DUMP)
 
 clean:
 	@echo "  CLEAN"
-	$(V)$(RM) $(ROM) $(DUMP) $(BUILDDIR) $(SDIMAGE) $(BINDIRS) $(SOUNDBANKDIR)/soundbank.bin
-	$(V)+$(MAKE) -C bootloader clean
-	$(V)+$(MAKE) -C bootstub clean
-	$(V)+$(MAKE) -C BootStrap clean
-	$(V)+$(MAKE) -C nds-exception-stub clean
+	$(V)$(RM) $(ROM) $(DUMP) $(BUILDDIR) $(SDIMAGE) \
+		$(SOUNDBANKDIR)/soundbank.bin
 
 sdimage:
 	@echo "  MKFATIMG $(SDIMAGE) $(SDROOT)"
@@ -250,21 +225,6 @@ dldipatch: $(ROM)
 	@echo "  DLDITOOL $(ROM)"
 	$(V)$(BLOCKSDS)/tools/dlditool/dlditool \
 		$(BLOCKSDS)/tools/dldi/r4tfv2.dldi $(ROM)
-
-data:
-	$(V)$(MKDIR) -p data
-
-bootloader: data
-	$(V)+$(MAKE) -C bootloader LOADBIN=$(CURDIR)/data/load.bin
-
-exceptionstub: data
-	$(V)+$(MAKE) -C nds-exception-stub STUBBIN=$(CURDIR)/data/exceptionstub.bin
-
-bootstub: data
-	$(V)+$(MAKE) -C bootstub
-
-BootStrap:
-	$(V)+$(MAKE) -C BootStrap
 
 # Rules
 # -----

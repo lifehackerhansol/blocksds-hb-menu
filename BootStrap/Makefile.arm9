@@ -5,6 +5,9 @@
 BLOCKSDS	?= /opt/blocksds/core
 BLOCKSDSEXT	?= /opt/blocksds/external
 
+WONDERFUL_TOOLCHAIN	?= /opt/wonderful
+ARM_NONE_EABI_PATH	?= $(WONDERFUL_TOOLCHAIN)/toolchain/gcc-arm-none-eabi/bin/
+
 # Source code paths
 # -----------------
 
@@ -17,7 +20,7 @@ AUDIODIRS	:=
 # Defines passed to all files
 # ---------------------------
 
-DEFINES		:=
+DEFINES		:= -D_NO_BOOTSTUB_
 
 # Libraries
 # ---------
@@ -39,7 +42,7 @@ SOUNDBANKDIR	:= $(BUILDDIR)/maxmod
 # Tools
 # -----
 
-PREFIX		:= arm-none-eabi-
+PREFIX		:= $(ARM_NONE_EABI_PATH)arm-none-eabi-
 CC		:= $(PREFIX)gcc
 CXX		:= $(PREFIX)g++
 OBJDUMP		:= $(PREFIX)objdump
@@ -73,14 +76,14 @@ ifneq ($(AUDIODIRS),)
     endif
 endif
 
-SOURCES_S	:=
-SOURCES_C	:= $(shell find -L $(SOURCEDIRS) -name "bootstrap.c") $(shell find -L $(SOURCEDIRS) -name "nds_loader_arm9.c")
-SOURCES_CPP	:=
+SOURCES_S	:= $(shell find -L $(SOURCEDIRS) -name "*.s")
+SOURCES_C	:= $(shell find -L $(SOURCEDIRS) -name "*.c")
+SOURCES_CPP	:= $(shell find -L $(SOURCEDIRS) -name "*.cpp")
 
 # Compiler and linker flags
 # -------------------------
 
-DEFINES		+= -D__NDS__ -DARM9 -D_NO_BOOTSTUB_
+DEFINES		+= -D__NDS__ -DARM9
 
 ARCH		:= -march=armv5te -mtune=arm946e-s
 

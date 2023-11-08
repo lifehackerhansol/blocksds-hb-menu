@@ -3,9 +3,12 @@
 BLOCKSDS	?= /opt/blocksds/core
 BLOCKSDSEXT	?= /opt/blocksds/external
 
+WONDERFUL_TOOLCHAIN	?= /opt/wonderful
+ARM_NONE_EABI_PATH	?= $(WONDERFUL_TOOLCHAIN)/toolchain/gcc-arm-none-eabi/bin/
+
 TARGET	:=	bootstub
 
-PREFIX		:= arm-none-eabi-
+PREFIX		:= $(ARM_NONE_EABI_PATH)arm-none-eabi-
 CC		:= $(PREFIX)gcc
 OBJCOPY		:= $(PREFIX)objcopy
 RM		:= rm -rf

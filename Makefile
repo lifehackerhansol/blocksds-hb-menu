@@ -5,6 +5,9 @@
 BLOCKSDS	?= /opt/blocksds/core
 BLOCKSDSEXT	?= /opt/blocksds/external
 
+WONDERFUL_TOOLCHAIN	?= /opt/wonderful
+ARM_NONE_EABI_PATH	?= $(WONDERFUL_TOOLCHAIN)/toolchain/gcc-arm-none-eabi/bin/
+
 # User config
 # ===========
 
@@ -37,7 +40,7 @@ INCLUDEDIRS	:=
 GFXDIRS		:= gfx
 BINDIRS		:= data
 AUDIODIRS	:=
-NITROFATDIR	:=
+NITROFSDIR	:= # A single directory that is the root of NitroFS
 
 # Defines passed to all files
 # ---------------------------
@@ -47,7 +50,7 @@ DEFINES		:=
 # Libraries
 # ---------
 
-LIBS		:= -lnds9 -lc -lstdc++
+LIBS		:= -lmm9 -lnds9
 LIBDIRS		:= $(BLOCKSDS)/libs/maxmod \
 		   $(BLOCKSDS)/libs/libnds
 
@@ -57,15 +60,21 @@ LIBDIRS		:= $(BLOCKSDS)/libs/maxmod \
 BUILDDIR	:= build
 ELF		:= build/$(NAME).elf
 DUMP		:= build/$(NAME).dump
-NITROFAT_IMG	:= build/nitrofat.bin
 MAP		:= build/$(NAME).map
-SOUNDBANKDIR	:= $(BUILDDIR)/maxmod
 ROM		:= $(NAME).nds
+
+# If NITROFSDIR is set, the output of mmutil will be placed in that directory
+SOUNDBANKINFODIR	:= $(BUILDDIR)/maxmod
+ifeq ($(strip $(NITROFSDIR)),)
+    SOUNDBANKDIR	:= $(BUILDDIR)/maxmod
+else
+    SOUNDBANKDIR	:= $(NITROFSDIR)
+endif
 
 # Tools
 # -----
 
-PREFIX		:= arm-none-eabi-
+PREFIX		:= $(ARM_NONE_EABI_PATH)arm-none-eabi-
 CC		:= $(PREFIX)gcc
 CXX		:= $(PREFIX)g++
 OBJDUMP		:= $(PREFIX)objdump
@@ -95,7 +104,7 @@ endif
 ifneq ($(AUDIODIRS),)
     SOURCES_AUDIO	:= $(shell find -L $(AUDIODIRS) -regex '.*\.\(it\|mod\|s3m\|wav\|xm\)')
     ifneq ($(SOURCES_AUDIO),)
-        INCLUDEDIRS	+= $(SOUNDBANKDIR)
+        INCLUDEDIRS	+= $(SOUNDBANKINFODIR)
     endif
 endif
 
@@ -113,9 +122,11 @@ ARCH		:= -march=armv5te -mtune=arm946e-s
 WARNFLAGS	:= -Wall
 
 ifeq ($(SOURCES_CPP),)
-    LD	:= $(CC)
+    LD		:= $(CC)
+    LIBS	+= -lc
 else
-    LD	:= $(CXX)
+    LD		:= $(CXX)
+    LIBS	+= -lstdc++ -lc
 endif
 
 INCLUDEFLAGS	:= $(foreach path,$(INCLUDEDIRS),-I$(path)) \
@@ -155,8 +166,10 @@ HEADERS_ASSETS	:= $(patsubst %.bin,%_bin.h,$(addprefix $(BUILDDIR)/,$(SOURCES_BI
 		   $(patsubst %.png,%.h,$(addprefix $(BUILDDIR)/,$(SOURCES_PNG)))
 
 ifneq ($(SOURCES_AUDIO),)
-    OBJS_ASSETS		+= $(SOUNDBANKDIR)/soundbank.c.o
-    HEADERS_ASSETS	+= $(SOUNDBANKDIR)/soundbank.h
+    ifeq ($(strip $(NITROFSDIR)),)
+        OBJS_ASSETS		+= $(SOUNDBANKDIR)/soundbank.c.o
+    endif
+    HEADERS_ASSETS	+= $(SOUNDBANKINFODIR)/soundbank.h
 endif
 
 OBJS_SOURCES	:= $(addsuffix .o,$(addprefix $(BUILDDIR)/,$(SOURCES_S))) \
@@ -189,16 +202,12 @@ endif
 	cp testfiles/* hbmenu/nds
 	zip -9r hbmenu-$(VERSION).zip hbmenu README.md COPYING
 
-ifneq ($(strip $(NITROFATDIR)),)
+ifneq ($(strip $(NITROFSDIR)),)
 # Additional arguments for ndstool
-NDSTOOL_FAT	:= -F $(NITROFAT_IMG)
+NDSTOOL_ARGS	:= -d $(NITROFSDIR)
 
-$(NITROFAT_IMG): $(NITROFATDIR)
-	@echo "  MKFATIMG $@ $(NITROFATDIR)"
-	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(NITROFATDIR) $@ 0
-
-# Make the NDS ROM depend on the filesystem image only if it is needed
-$(ROM): $(NITROFAT_IMG)
+# Make the NDS ROM depend on the filesystem only if it is needed
+$(ROM): $(NITROFSDIR)
 endif
 
 # Combine the title strings
@@ -213,7 +222,7 @@ $(ROM): $(ELF)
 	$(V)$(BLOCKSDS)/tools/ndstool/ndstool -c $@ \
 		-7 $(BLOCKSDS)/sys/default_arm7/arm7.elf -9 $(ELF) \
 		-b $(GAME_ICON) "$(GAME_FULL_TITLE)" \
-		$(NDSTOOL_FAT)
+		$(NDSTOOL_ARGS)
 
 $(ELF): $(OBJS)
 	@echo "  LD      $@"
@@ -227,7 +236,7 @@ dump: $(DUMP)
 
 clean:
 	@echo "  CLEAN"
-	$(V)$(RM) $(ROM) $(DUMP) $(BUILDDIR) $(SDIMAGE) $(BINDIRS)
+	$(V)$(RM) $(ROM) $(DUMP) $(BUILDDIR) $(SDIMAGE) $(BINDIRS) $(SOUNDBANKDIR)/soundbank.bin
 	$(V)+$(MAKE) -C bootloader clean
 	$(V)+$(MAKE) -C bootstub clean
 	$(V)+$(MAKE) -C BootStrap clean
@@ -235,7 +244,7 @@ clean:
 
 sdimage:
 	@echo "  MKFATIMG $(SDIMAGE) $(SDROOT)"
-	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(SDROOT) $(SDIMAGE) 0
+	$(V)$(BLOCKSDS)/tools/mkfatimg/mkfatimg -t $(SDROOT) $(SDIMAGE)
 
 dldipatch: $(ROM)
 	@echo "  DLDITOOL $(ROM)"
@@ -270,10 +279,20 @@ $(BUILDDIR)/%.c.o : %.c
 	@$(MKDIR) -p $(@D)
 	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
 
+$(BUILDDIR)/%.arm.c.o : %.arm.c
+	@echo "  CC      $<"
+	@$(MKDIR) -p $(@D)
+	$(V)$(CC) $(CFLAGS) -MMD -MP -marm -mlong-calls -c -o $@ $<
+
 $(BUILDDIR)/%.cpp.o : %.cpp
 	@echo "  CXX     $<"
 	@$(MKDIR) -p $(@D)
 	$(V)$(CXX) $(CXXFLAGS) -MMD -MP -c -o $@ $<
+
+$(BUILDDIR)/%.arm.cpp.o : %.arm.cpp
+	@echo "  CXX     $<"
+	@$(MKDIR) -p $(@D)
+	$(V)$(CXX) $(CXXFLAGS) -MMD -MP -marm -mlong-calls -c -o $@ $<
 
 $(BUILDDIR)/%.bin.o $(BUILDDIR)/%_bin.h : %.bin
 	@echo "  BIN2C   $<"
@@ -286,21 +305,26 @@ $(BUILDDIR)/%.png.o $(BUILDDIR)/%.h : %.png %.grit
 	@$(MKDIR) -p $(@D)
 	$(V)$(BLOCKSDS)/tools/grit/grit $< -ftc -W1 -o$(BUILDDIR)/$*
 	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $(BUILDDIR)/$*.png.o $(BUILDDIR)/$*.c
-	$(V)touch $(BUILDDIR)/$*.png.o $(BUILDDIR)/$*.h
 
-$(SOUNDBANKDIR)/soundbank.h: $(SOURCES_AUDIO)
+ifneq ($(SOURCES_AUDIO),)
+
+$(SOUNDBANKINFODIR)/soundbank.h: $(SOURCES_AUDIO)
 	@echo "  MMUTIL  $^"
 	@$(MKDIR) -p $(@D)
 	@$(BLOCKSDS)/tools/mmutil/mmutil $^ -d \
-		-o$(SOUNDBANKDIR)/soundbank.bin -h$(SOUNDBANKDIR)/soundbank.h
+		-o$(SOUNDBANKDIR)/soundbank.bin -h$(SOUNDBANKINFODIR)/soundbank.h
 
-$(SOUNDBANKDIR)/soundbank.c.o: $(SOUNDBANKDIR)/soundbank.h
+ifeq ($(strip $(NITROFSDIR)),)
+$(SOUNDBANKDIR)/soundbank.c.o: $(SOUNDBANKINFODIR)/soundbank.h
 	@echo "  BIN2C   soundbank.bin"
 	$(V)$(BLOCKSDS)/tools/bin2c/bin2c $(SOUNDBANKDIR)/soundbank.bin \
 		$(SOUNDBANKDIR)
 	@echo "  CC.9    soundbank_bin.c"
 	$(V)$(CC) $(CFLAGS) -MMD -MP -c -o $(SOUNDBANKDIR)/soundbank.c.o \
 		$(SOUNDBANKDIR)/soundbank_bin.c
+endif
+
+endif
 
 # All assets must be built before the source code
 # -----------------------------------------------

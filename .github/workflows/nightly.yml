@@ -1,0 +1,36 @@
+name: Build Homebrew Menu
+
+on:
+  push:
+    branches: ["master"]
+    paths-ignore:
+      - 'README.md'
+  pull_request:
+    branches: ["master"]
+    paths-ignore:
+      - 'README.md'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: skylyrac/blocksds:slim-latest
+    name: Build with Docker using BlocksDS
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          submodules: recursive
+      - name: Install needed packages
+        run: |
+          apt update
+          apt install -y zip
+      - name: Make Homebrew Menu
+        run: |
+          chmod +x build.sh
+          ./build.sh
+      - name: Publish build to GH Actions
+        uses: actions/upload-artifact@v3
+        with:
+          path: hbmenu.nds
+          name: build
